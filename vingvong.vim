@@ -22,13 +22,17 @@ let s:gamestate = 0
 " variable to help in timer
 let s:lasttime = 0
 
-" velocity vector for signal motion at a time
-let s:x = 1
-let s:y = -1
+" velocity vector for 'signal' motion at a time
+let s:x = 0
+let s:y = 0
 
-" line and column number for signal at a time
+" line and column number for 'signal' at a time
 let s:line = 0
 let s:col = (winwidth(0)/2)
+
+" line and column for just previous instance of 'signal'
+let s:lastline = 0
+let s:lastcol = s:col
 
 
 """""""""""""""""""""""
@@ -42,7 +46,7 @@ command Vingvong :call StartGame()
 autocmd BufRead,BufNewFile *vingvong.txt* set nonumber
 
 " 
-"autocmd BufRead,BufNewFile *vingvong.txt* nnoremap <buffer> w :call TimeMac()<cr>
+autocmd BufRead,BufNewFile *vingvong.txt* nnoremap <buffer> w :call TimeMac()<cr>
 
 " stop cursor blinking
 autocmd BufRead,BufNewFile *vingvong.txt* set gcr=n:blinkwait0
@@ -71,13 +75,12 @@ endfunc
 " function that acts as a pseudo timer
 " with help of fake key-press events
 function! TimeMac()
-  let now = Now()
-  if (now > s:lasttime + 3)
-    let s:lasttime = now
-    return 0
-  else
-    call TimeMac()
-  endif
+  let now = 0
+  while (Now() < s:lasttime + 1)
+    let now = Now()
+  endwhile
+
+  let s:lasttime = now
 endfunc
 
 
@@ -92,9 +95,11 @@ function! GamePlot()
 
   " now lines in buffer have increased
   let s:line = line("$") - 1
+  let s:lastline = s:line
 
   call AddPaddle()
   call InitState()
+  call InitVector()
 endfunc
 
 " function that display game errors
@@ -111,24 +116,33 @@ function! AddPaddle()
     " initial arrangement of paddle : left/right space
     let lfs = (winwidth(0) - 10)/2
     let rgs = winwidth(0) - 10 - lfs
-    call setline("$", repeat(" ", lfs).repeat(s:signal, 10).repeat(" ", rgs))
+    call setline("$", repeat(" ", lfs).(s:paddle).repeat(" ", rgs))
   endif
 endfunc
 
 " play and pause the game
 function! PlayPause()
-  if s:gamestate == 0
-    let s:gamestate = 1
-  elseif s:gamestate == 1
-    let s:gamestate = 0
-  endif
+  let s:gamestate = !(s:gamestate)
 
-  call MoveCursor()
+  if (s:gamestate == 1)
+    call MoveCursor()
+  endif
 endfunc
 
 " place cursor in center : initial state when game is not started
 function! InitState()
-  call cursor(s:line, s:col)
+  call PlaceSignal(s:line, s:col)
+endfunc
+
+" decide where 'signal' will move initially
+function! InitVector()
+  if (localtime()%2 == 1)
+    let s:x = 1
+    let s:y = -1
+  else
+    let s:x = -1
+    let s:y = -1
+  endif
 endfunc
 
 " paddle movement
@@ -151,6 +165,15 @@ function! Delay(ms)
   execute "sleep".time
 endfunc
 
+" changes the 'signal' velocity vector
+function! Change(dir)
+  if a:dir == 1
+    return -1
+  elseif a:dir == -1
+    return 1
+  endif
+endfunc
+
 " function that returns next line and col number
 " according to collision and velocity vector
 function! NextPosition()
@@ -159,14 +182,18 @@ function! NextPosition()
   let c = s:col + s:x
 
   " vertical border collision
-  if ((c == (winwidth(0) - 1)) || (c == 1))
-    let s:x = !(s:x)
+  if ((c == (winwidth(0))) || (c == 0))
+    let s:x = Change(s:x)
   endif
 
   " horizontal border collision
-  if ((l == (winheight(0) - 1)) || (l == 1))
-    let s:y = !(s:y)
+  if ((l == (winheight(0))) || (l == 0))
+    let s:y = Change(s:y)
   endif
+
+  " last position of 'signal'
+  let s:lastline = s:line
+  let s:lastcol = s:col
 
   " updated value of next position
   let s:line = s:line + s:y
@@ -176,12 +203,17 @@ function! NextPosition()
   return result
 endfunc
 
+" place 'signal' object at 'where it should'
 function! PlaceSignal(line, col)
-  " remove Tickbox instance from its precious place
-  call setline(s:line, repeat(" ", winwidth(0)))
+  " remove 'signal' object from its precious place
+  call setline(s:lastline, repeat(" ", winwidth(0)))
 
-  " place signal object at new place
+  " place 'signal' object at new place
   call setline(a:line, repeat(" ", a:col - 1).(s:signal).repeat(" ", winwidth(0) - a:col))
+endfunc
+
+function! Continue()
+  call MoveCursor()
 endfunc
 
 " cursor movement
@@ -190,8 +222,11 @@ function! MoveCursor()
   if (s:gamestate == 1)
     let next = NextPosition()
     call PlaceSignal(next[0], next[1])
-    call TimeMac()
-    call MoveCursor()
+    call feedkeys("w")
+  endif
+
+  if (s:gamestate == 1)
+    call Continue()
   endif
 endfunc
 
