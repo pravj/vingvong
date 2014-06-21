@@ -226,7 +226,7 @@ function! MoveCursor()
   endif
 
   if (s:gamestate == 1)
-    call Continue()
+    "call Continue()
   endif
 endfunc
 
